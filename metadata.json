@@ -1,0 +1,6 @@
+{
+  "name": "Sonakshi's Birthday Surprise",
+  "description": "A premium, animated storybook of friendship, memories, and gratitude for Sonakshi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
