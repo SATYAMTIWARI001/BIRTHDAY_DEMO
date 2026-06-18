@@ -15,14 +15,14 @@ import { uploadMediaFile } from '../lib/firebase';
 
 interface CurationPanelProps {
   mediaItems: MemoryMedia[];
-  onUpdateMediaItem: (item: MemoryMedia) => void;
-  onAddMediaItem: (item: MemoryMedia) => void;
-  onDeleteMediaItem: (id: string) => void;
+  onUpdateMediaItem: (item: MemoryMedia) => Promise<void>;
+  onAddMediaItem: (item: MemoryMedia) => Promise<void>;
+  onDeleteMediaItem: (id: string) => Promise<void>;
   friendshipDate: string;
-  onUpdateFriendshipDate: (date: string) => void;
-  onResetToDefaults: () => void;
+  onUpdateFriendshipDate: (date: string) => Promise<void>;
+  onResetToDefaults: () => Promise<void>;
   onExportAlbum: () => void;
-  onImportAlbum: (file: File) => void;
+  onImportAlbum: (file: File) => Promise<void>;
   currentTheme: 'light' | 'dark';
   
   // Security + Admin states
@@ -31,9 +31,9 @@ interface CurationPanelProps {
   
   // Custom Content states
   songs: Song[];
-  onUpdateSongs: (songs: Song[]) => void;
+  onUpdateSongs: (songs: Song[]) => Promise<void>;
   chapters: Chapter[];
-  onUpdateChapter: (chapterId: number, title: string, subtitle: string, text: string) => void;
+  onUpdateChapter: (chapterId: number, title: string, subtitle: string, text: string) => Promise<void>;
   
   // Print Book capability
   onPrintBook?: () => void;
@@ -46,15 +46,15 @@ interface CurationPanelProps {
 /**
  * Native canvas compression before storing JPEG pictures to storage
  */
-function compressImage(file: File): Promise<File> {
+function compressImage(file: File, isBase64Fallback = false): Promise<File> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
+        const MAX_WIDTH = isBase64Fallback ? 600 : 800;
+        const MAX_HEIGHT = isBase64Fallback ? 600 : 800;
         let width = img.width;
         let height = img.height;
 
@@ -85,7 +85,7 @@ function compressImage(file: File): Promise<File> {
             } else {
               resolve(file);
             }
-          }, 'image/jpeg', 0.82); // 82% quality compress
+          }, 'image/jpeg', isBase64Fallback ? 0.45 : 0.65); // extra compression for base64 to ensure it stays in Firestore's 1MB limit
         } else {
           resolve(file);
         }
@@ -224,20 +224,22 @@ export function CurationPanel({
         downloadUrl = await uploadMediaFile(compressed);
       } catch (uploadErr) {
         console.warn('Firebase Storage upload failed, falling back to offline Base64 compression:', uploadErr);
-        downloadUrl = await fileToBase64(compressed);
+        const extraCompressed = await compressImage(file, true);
+        downloadUrl = await fileToBase64(extraCompressed);
       }
-      setUploadProgress(100);
+      setUploadProgress(70);
 
       const existing = mediaItems.find((m) => m.id === id);
       if (existing) {
-        onUpdateMediaItem({
+        await onUpdateMediaItem({
           ...existing,
           url: downloadUrl,
           title: file.name.split('.')[0] || existing.title
         });
       }
+      setUploadProgress(100);
     } catch (err: any) {
-      alert('Upload failed: ' + err.message);
+      alert('Upload & Save failed: ' + err.message);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -343,7 +345,13 @@ export function CurationPanel({
         let resolvedUrl = '';
         if (isImage) {
           const comp = await compressImage(file);
-          resolvedUrl = await uploadMediaFile(comp);
+          try {
+            resolvedUrl = await uploadMediaFile(comp);
+          } catch (uploadErr) {
+            console.warn('Storage failed in batch upload, collapsing to Base64:', uploadErr);
+            const extraComp = await compressImage(file, true);
+            resolvedUrl = await fileToBase64(extraComp);
+          }
         } else {
           resolvedUrl = await uploadMediaFile(file);
         }
@@ -357,7 +365,7 @@ export function CurationPanel({
           description: 'A beautiful memory uploaded during multiple file drag-and-drop curation.',
           chapterId: Number(newMemoryChapter)
         };
-        onAddMediaItem(newMedia);
+        await onAddMediaItem(newMedia);
         successCount++;
       }
       setAddMemorySuccess(`Successfully uploaded ${successCount} memory assets!`);
@@ -408,7 +416,8 @@ export function CurationPanel({
             resolvedUrl = await uploadMediaFile(compressed);
           } catch (uploadErr) {
             console.warn('Firebase Storage upload failed, falling back to offline Base64 compression:', uploadErr);
-            resolvedUrl = await fileToBase64(compressed);
+            const extraCompressed = await compressImage(newMemoryFile, true);
+            resolvedUrl = await fileToBase64(extraCompressed);
           }
           setUploadProgress(100);
         }
@@ -441,7 +450,7 @@ export function CurationPanel({
         chapterId: Number(newMemoryChapter)
       };
 
-      onAddMediaItem(newMedia);
+      await onAddMediaItem(newMedia);
       setAddMemorySuccess('Memory added safely! View it in the Polaroid Gallery.');
       
       // Reset inputs
@@ -453,7 +462,7 @@ export function CurationPanel({
         fileInputRefForAdd.current.value = '';
       }
     } catch (err: any) {
-      setAddMemoryError('Upload failed: ' + err.message);
+      setAddMemoryError('Add & Save failed: ' + err.message);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -797,9 +806,13 @@ export function CurationPanel({
                               <span className="text-[8px] text-neutral-500 font-mono bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-850">Ref: {item.id}</span>
                               <button
                                 type="button"
-                                onClick={() => {
+                                onClick={async () => {
                                   if (window.confirm(`Delete polaroid memory: "${item.title}"?`)) {
-                                    onDeleteMediaItem(item.id);
+                                    try {
+                                      await onDeleteMediaItem(item.id);
+                                    } catch (err: any) {
+                                      alert('Failed to delete memory: ' + err.message);
+                                    }
                                   }
                                 }}
                                 className="text-[9px] font-bold text-neutral-400 hover:text-red-400 uppercase tracking-widest transition"
@@ -881,9 +894,13 @@ export function CurationPanel({
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             if (window.confirm(`Delete video option "${vid.title}"?`)) {
-                              onDeleteMediaItem(vid.id);
+                              try {
+                                await onDeleteMediaItem(vid.id);
+                              } catch (err: any) {
+                                alert('Failed to delete video: ' + err.message);
+                              }
                             }
                           }}
                           className="text-[9px] font-bold text-neutral-400 hover:text-red-400 uppercase tracking-widest transition"

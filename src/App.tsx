@@ -377,6 +377,7 @@ export default function App() {
       });
     } catch (err) {
       console.error('Error saving draft state:', err);
+      throw err;
     }
   };
 
@@ -668,28 +669,33 @@ export default function App() {
   };
 
   // Read upload JSON configuration
-  const handleImportAlbum = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const parsed = JSON.parse(reader.result as string);
-        const loadedDate = parsed.friendshipDate || '2022-06-17';
-        const loadedMedia = Array.isArray(parsed.mediaItems) ? parsed.mediaItems : mediaItems;
-        const loadedChapters = Array.isArray(parsed.chapters) ? parsed.chapters : chapters;
-        const loadedSongs = Array.isArray(parsed.songs) ? parsed.songs : songs;
+  const handleImportAlbum = async (file: File): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const parsed = JSON.parse(reader.result as string);
+          const loadedDate = parsed.friendshipDate || '2022-06-17';
+          const loadedMedia = Array.isArray(parsed.mediaItems) ? parsed.mediaItems : mediaItems;
+          const loadedChapters = Array.isArray(parsed.chapters) ? parsed.chapters : chapters;
+          const loadedSongs = Array.isArray(parsed.songs) ? parsed.songs : songs;
 
-        setFriendshipDate(loadedDate);
-        setMediaItems(loadedMedia);
-        setChapters(loadedChapters);
-        setSongs(loadedSongs);
+          setFriendshipDate(loadedDate);
+          setMediaItems(loadedMedia);
+          setChapters(loadedChapters);
+          setSongs(loadedSongs);
 
-        await syncDraftToFirebase(loadedMedia, loadedChapters, loadedSongs, loadedDate);
-        alert('Friendship Album successfully loaded and staged to draft queue!');
-      } catch (err) {
-        alert('Invalid file format. Please upload a valid JSON album exported from this surprise tool!');
-      }
-    };
-    reader.readAsText(file);
+          await syncDraftToFirebase(loadedMedia, loadedChapters, loadedSongs, loadedDate);
+          alert('Friendship Album successfully loaded and staged to draft queue!');
+          resolve();
+        } catch (err) {
+          alert('Invalid file format. Please upload a valid JSON album exported from this surprise tool!');
+          reject(err);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsText(file);
+    });
   };
 
   // Publish draft state changes to the live viewing audience
