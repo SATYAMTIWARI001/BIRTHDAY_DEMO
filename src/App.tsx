@@ -7,14 +7,47 @@ import React, { useEffect, useState } from 'react';
 import { 
   Heart, Sparkles, Image as ImageIcon, BookOpen, Clock, 
   ChevronDown, Sun, Moon, Volume2, Sparkle, RefreshCw, 
-  ArrowRight, Award, GraduationCap, Video, Download, HelpCircle
+  ArrowRight, Award, GraduationCap, Video, Download, HelpCircle,
+  Lock, KeyRound
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
-import { MemoryMedia } from './types';
+import { MemoryMedia, Song, Chapter } from './types';
+import { DEFAULT_PHOTOS, DEFAULT_VIDEOS } from './lib/indexedDb';
+import { INITIAL_CHAPTERS } from './lib/initialChapters';
 import { 
-  populateDefaultsIfEmpty, saveMediaItem, saveMetadata, 
-  getMetadata, clearAllMedia, DEFAULT_PHOTOS 
-} from './lib/indexedDb';
+  fetchPublishedState, 
+  fetchDraftState, 
+  saveDraftState, 
+  publishState, 
+  isOwnerEmail, 
+  auth 
+} from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
+const safeSessionStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {
+      // Fallback silently if storage is blocked
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // Fallback silently if storage is blocked
+    }
+  }
+};
 
 import { LoadingScreen } from './components/LoadingScreen';
 import { CursorTrail } from './components/CursorTrail';
@@ -24,6 +57,31 @@ import { MusicPlayer } from './components/MusicPlayer';
 import { CurationPanel } from './components/CurationPanel';
 import { ChapterView } from './components/ChapterView';
 import { GalleryView } from './components/GalleryView';
+import { AdminLoginModal } from './components/AdminLoginModal';
+
+const INITIAL_SONGS: Song[] = [
+  {
+    id: 'synth-bday',
+    title: 'Nostalgic Music Box (Happy Birthday)',
+    artist: 'Procedural Synth Engine',
+    url: '',
+    isSynthesized: true,
+  },
+  {
+    id: 'piano-ambient',
+    title: 'Soft Piano Instrumental',
+    artist: 'Ethereal Melodies',
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    isSynthesized: false,
+  },
+  {
+    id: 'acoustic-journey',
+    title: 'Acoustic Guitar Whispers',
+    artist: 'Warm Strings Ambient',
+    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    isSynthesized: false,
+  }
+];
 
 interface TimeDifference {
   years: number;
@@ -41,16 +99,30 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'story' | 'gallery'>('story');
 
   // Core Custom State
-  const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('light');
+  const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('dark');
   const [friendshipDate, setFriendshipDate] = useState('2022-06-17'); // June 17, 2022 default anniversary!
   const [mediaItems, setMediaItems] = useState<MemoryMedia[]>([]);
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
+
+  // Administrative & Security Authentication states
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [adminPasswordHash, setAdminPasswordHash] = useState('Satyam@2026'); // Secret default owner passcode
+  const [lockClickCount, setLockClickCount] = useState(0);
+
+  // Editable Chapter descriptions & Custom Songs state
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [songs, setSongs] = useState<Song[]>([]);
 
   // Celebratory triggers
   const [showFireworks, setShowFireworks] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [balloons, setBalloons] = useState<{ id: number; color: string; left: number; delay: number }[]>([]);
   const [isCandleLit, setIsCandleLit] = useState(true);
+
+  // Physical A4 Printable state
+  const [printTarget, setPrintTarget] = useState<MemoryMedia | null>(null);
+  const [printAll, setPrintAll] = useState(false);
 
   // Time metrics
   const [friendshipDuration, setFriendshipDuration] = useState<TimeDifference>({
@@ -62,27 +134,180 @@ export default function App() {
     seconds: 0
   });
 
-  // Load customizations and media assets from local storage
+  // Load customizations and media assets from Firebase Firestore
   useEffect(() => {
-    async function loadData() {
-      try {
-        const loadedMedia = await populateDefaultsIfEmpty();
-        setMediaItems(loadedMedia);
+    let unsubscribeAuth: (() => void) | null = null;
 
-        const savedDate = await getMetadata<string>('friendship_date');
-        if (savedDate) {
-          setFriendshipDate(savedDate);
+    async function loadScrapbookState(email: string | null) {
+      try {
+        const isOwner = isOwnerEmail(email);
+        setIsAdminLoggedIn(isOwner);
+
+        let data = null;
+        if (isOwner) {
+          data = await fetchDraftState();
+        } else {
+          data = await fetchPublishedState();
         }
 
-        const savedTheme = await getMetadata<'light' | 'dark'>('theme_mode');
-        if (savedTheme) {
-          setCurrentTheme(savedTheme);
+        // Bootstrap Firestore with pristine defaults if it's completely empty!
+        if (!data) {
+          const initialMedia: MemoryMedia[] = [];
+          for (let i = 1; i <= 10; i++) {
+            const id = `photo${i}`;
+            const def = DEFAULT_PHOTOS[id] || { url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7', title: 'Special Memory', description: '' };
+            
+            let chapterId = 9;
+            if (i === 1) chapterId = 1;
+            else if (i === 2) chapterId = 2;
+            else if (i === 3 || i === 4) chapterId = 3;
+            else if (i === 5) chapterId = 4;
+            else if (i === 6) chapterId = 5;
+            else if (i === 7) chapterId = 6;
+            else if (i === 8) chapterId = 7;
+            else if (i === 9) chapterId = 8;
+
+            initialMedia.push({
+              id,
+              type: 'image',
+              url: def.url,
+              title: def.title,
+              description: def.description || `This is our warm school memory ${i}.`,
+              chapterId
+            });
+          }
+          for (let i = 1; i <= 2; i++) {
+            const id = `video${i}`;
+            const def = DEFAULT_VIDEOS[id] || { url: '', title: `Video ${i}` };
+            initialMedia.push({
+              id,
+              type: 'video',
+              url: def.url,
+              title: def.title,
+              description: `Persistent memory clip ${i} to highlight college & wonderful moments together.`,
+              chapterId: i === 1 ? 4 : 9
+            });
+          }
+
+          const defaultState = {
+            mediaItems: initialMedia,
+            chapters: INITIAL_CHAPTERS,
+            songs: INITIAL_SONGS,
+            friendshipDate: '2022-06-17'
+          };
+
+          // Seed default configurations
+          if (isOwner) {
+            try {
+              await publishState(defaultState);
+            } catch (seedErr) {
+              console.error('Fail to seed default Firestore configuration:', seedErr);
+            }
+          }
+          data = defaultState;
+        }
+
+        const loadedMedia = data.mediaItems || [];
+        let needsSyncSave = false;
+        const upgradedMedia = loadedMedia.map((item) => {
+          if (item.type === 'image') {
+            const def = DEFAULT_PHOTOS[item.id];
+            if (def) {
+              let updated = { ...item };
+              let changed = false;
+              if (!item.url || item.url.includes('unsplash.com')) {
+                updated.url = def.url;
+                changed = true;
+              }
+              if (!item.title || item.title === 'Special Memory' || item.title.startsWith('The Spark') || item.title.startsWith('Walking Side') || item.title.startsWith('Warm Shared') || item.title.startsWith('Sparks of Joy') || item.title.startsWith('Campus Chronicles') || item.title.startsWith('Resilience and') || item.title.startsWith('Heartfelt') || item.title.startsWith('Pure Gratitude') || item.title.startsWith('The Birthday') || item.title.startsWith('Eternal') || item.title.startsWith('Classroom Smiles')) {
+                updated.title = def.title;
+                changed = true;
+              }
+              if (!item.description || item.description.includes('placeholder') || item.description.includes('This is your gorgeous') || item.description.includes('gorgeous placeholder') || item.description.includes('college & wonderful')) {
+                updated.description = def.description;
+                changed = true;
+              }
+              if (changed) {
+                needsSyncSave = true;
+                return updated;
+              }
+            }
+          }
+          return item;
+        });
+
+        setMediaItems(upgradedMedia);
+        setChapters(data.chapters || []);
+        setSongs(data.songs || []);
+        setFriendshipDate(data.friendshipDate || '2022-06-17');
+
+        if (needsSyncSave && isOwner) {
+          try {
+            await syncDraftToFirebase(upgradedMedia, data.chapters || INITIAL_CHAPTERS, data.songs || INITIAL_SONGS, data.friendshipDate || '2022-06-17');
+          } catch (syncErr) {
+            console.warn('Silent upgrade syncing to Firebase:', syncErr);
+          }
         }
       } catch (err) {
-        console.error('IndexedDB loading error, falling back:', err);
+        console.error('Firebase state synchronization error, using memory fallback:', err);
+        // Fallback states
+        setChapters(INITIAL_CHAPTERS);
+        setSongs(INITIAL_SONGS);
+        setFriendshipDate('2022-06-17');
+        
+        const fallbackMedia: MemoryMedia[] = [];
+        for (let i = 1; i <= 10; i++) {
+          const id = `photo${i}`;
+          const def = DEFAULT_PHOTOS[id] || { url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7', title: 'Special Memory', description: '' };
+          
+          let chapterId = 9;
+          if (i === 1) chapterId = 1;
+          else if (i === 2) chapterId = 2;
+          else if (i === 3 || i === 4) chapterId = 3;
+          else if (i === 5) chapterId = 4;
+          else if (i === 6) chapterId = 5;
+          else if (i === 7) chapterId = 6;
+          else if (i === 8) chapterId = 7;
+          else if (i === 9) chapterId = 8;
+
+          fallbackMedia.push({
+            id,
+            type: 'image',
+            url: def.url,
+            title: def.title,
+            description: def.description || `Special memory snapshot ${i}`,
+            chapterId
+          });
+        }
+        for (let i = 1; i <= 2; i++) {
+          const id = `video${i}`;
+          const def = DEFAULT_VIDEOS[id] || { url: '', title: `Video ${i}` };
+          fallbackMedia.push({
+            id,
+            type: 'video',
+            url: def.url,
+            title: def.title,
+            description: `Persistent memory clip ${i} to highlight college & wonderful moments together.`,
+            chapterId: i === 1 ? 4 : 9
+          });
+        }
+        setMediaItems(fallbackMedia);
+      } finally {
+        setIsLoading(false);
       }
     }
-    loadData();
+
+    unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user && user.email && isOwnerEmail(user.email)) {
+        loadScrapbookState(user.email);
+      } else {
+        loadScrapbookState(null);
+      }
+    });
+
+    return () => {
+      if (unsubscribeAuth) unsubscribeAuth();
+    };
   }, []);
 
   // Update theme html flags
@@ -141,24 +366,191 @@ export default function App() {
     return () => clearInterval(interval);
   }, [friendshipDate]);
 
-  // Handle single media edits saving to IndexedDB
+  // Central draft state synchronization helper
+  const syncDraftToFirebase = async (newMedia: MemoryMedia[], newChaps: Chapter[], newSongs: Song[], newDate: string) => {
+    try {
+      await saveDraftState({
+        mediaItems: newMedia,
+        chapters: newChaps,
+        songs: newSongs,
+        friendshipDate: newDate
+      });
+    } catch (err) {
+      console.error('Error saving draft state:', err);
+    }
+  };
+
+  // Listen for custom curation celebration events triggered by the admin drawer
+  useEffect(() => {
+    const handleCurationCelebrant = () => {
+      triggerCelebration();
+    };
+    window.addEventListener('curation_celebrate', handleCurationCelebrant);
+    return () => {
+      window.removeEventListener('curation_celebrate', handleCurationCelebrant);
+    };
+  }, []);
+
+  // Handle single media edits saving to Firebase
   const handleUpdateMediaItem = async (updatedItem: MemoryMedia) => {
-    setMediaItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
-    await saveMediaItem(updatedItem);
+    // 1. Update media items array
+    const originalItem = mediaItems.find(m => m.id === updatedItem.id);
+    const updated = mediaItems.map((item) => (item.id === updatedItem.id ? updatedItem : item));
+    setMediaItems(updated);
+
+    // 2. Adjust chapters if the chapterId was changed
+    let updatedChapters = chapters;
+    if (originalItem && originalItem.chapterId !== updatedItem.chapterId) {
+      // Detach from previous chapter
+      updatedChapters = updatedChapters.map(c => {
+        if (c.id === originalItem.chapterId) {
+          return {
+            ...c,
+            photoIds: c.photoIds.filter(pid => pid !== updatedItem.id),
+            videoIds: c.videoIds ? c.videoIds.filter(vid => vid !== updatedItem.id) : []
+          };
+        }
+        return c;
+      });
+
+      // Attach to new chapter
+      updatedChapters = updatedChapters.map(c => {
+        if (c.id === updatedItem.chapterId) {
+          if (updatedItem.type === 'image') {
+            const pIds = c.photoIds.includes(updatedItem.id) ? c.photoIds : [...c.photoIds, updatedItem.id];
+            return { ...c, photoIds: pIds };
+          } else {
+            const vIds = c.videoIds ? (c.videoIds.includes(updatedItem.id) ? c.videoIds : [...c.videoIds, updatedItem.id]) : [updatedItem.id];
+            return { ...c, videoIds: vIds };
+          }
+        }
+        return c;
+      });
+      setChapters(updatedChapters);
+    }
+
+    await syncDraftToFirebase(updated, updatedChapters, songs, friendshipDate);
   };
 
   // Modify friendship counter date
   const handleUpdateFriendshipDate = async (newDate: string) => {
     setFriendshipDate(newDate);
-    await saveMetadata('friendship_date', newDate);
+    await syncDraftToFirebase(mediaItems, chapters, songs, newDate);
   };
 
-  // Switch Theme modes
-  const toggleTheme = async () => {
-    const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
-    setCurrentTheme(nextTheme);
-    await saveMetadata('theme_mode', nextTheme);
+  // Switch Theme modes local only (Locked to dark mode)
+  const toggleTheme = () => {
+    setCurrentTheme('dark');
   };
+
+  // 1. Session Logging
+  const handleLogoutAdmin = async () => {
+    try {
+      await auth.signOut();
+      setIsAdminLoggedIn(false);
+      safeSessionStorage.removeItem('surprises_admin_session');
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
+  const handleLoginSuccess = () => {
+    setIsAdminLoggedIn(true);
+    setShowAdminLoginModal(false);
+    safeSessionStorage.setItem('surprises_admin_session', 'true');
+    triggerCelebration();
+  };
+
+  // 2. Custom photo/video insertions
+  const handleAddMediaItem = async (item: MemoryMedia) => {
+    const updatedMedia = [...mediaItems, item];
+    setMediaItems(updatedMedia);
+
+    // update corresponding chapter
+    const updatedChapters = chapters.map(c => {
+      if (c.id === item.chapterId) {
+        if (item.type === 'image') {
+          const pIds = c.photoIds.includes(item.id) ? c.photoIds : [...c.photoIds, item.id];
+          return { ...c, photoIds: pIds };
+        } else {
+          const vIds = c.videoIds ? (c.videoIds.includes(item.id) ? c.videoIds : [...c.videoIds, item.id]) : [item.id];
+          return { ...c, videoIds: vIds };
+        }
+      }
+      return c;
+    });
+    setChapters(updatedChapters);
+    await syncDraftToFirebase(updatedMedia, updatedChapters, songs, friendshipDate);
+  };
+
+  const handleDeleteMediaItem = async (id: string) => {
+    const updatedMedia = mediaItems.filter(m => m.id !== id);
+    setMediaItems(updatedMedia);
+
+    // detach reference from any chapters
+    const updatedChapters = chapters.map(c => ({
+      ...c,
+      photoIds: c.photoIds.filter(pid => pid !== id),
+      videoIds: c.videoIds ? c.videoIds.filter(vid => vid !== id) : []
+    }));
+    setChapters(updatedChapters);
+    await syncDraftToFirebase(updatedMedia, updatedChapters, songs, friendshipDate);
+  };
+
+  // 3. Songs modifications
+  const handleUpdateSongs = async (songsList: Song[]) => {
+    setSongs(songsList);
+    await syncDraftToFirebase(mediaItems, chapters, songsList, friendshipDate);
+  };
+
+  // 4. Chapter descriptions updating
+  const handleUpdateChapter = async (chapterId: number, title: string, subtitle: string, text: string) => {
+    const updated = chapters.map(c => (c.id === chapterId ? { ...c, title, subtitle, text } : c));
+    setChapters(updated);
+    await syncDraftToFirebase(mediaItems, updated, songs, friendshipDate);
+  };
+
+  // 5. Change credential password (Deprecated in favor of Firebase Auth)
+  const handleChangeAdminPassword = async (newPass: string) => {
+    setAdminPasswordHash(newPass);
+  };
+
+  // 6. Handle print triggers
+  const handlePrintCard = (item: MemoryMedia) => {
+    setPrintTarget(item);
+    setPrintAll(false);
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const handlePrintAllCards = () => {
+    setPrintTarget(null);
+    setPrintAll(true);
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  // 7. Cleanup after print dialog closes
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintTarget(null);
+      setPrintAll(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
+  // Query parameter listener for secret dashboard URLs
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('admin') === 'true' || query.has('login') || query.has('admin')) {
+      setShowAdminLoginModal(true);
+    }
+  }, []);
 
   // Trigger high intensity celebration
   const triggerCelebration = () => {
@@ -197,15 +589,53 @@ export default function App() {
     }, 6000);
   };
 
-  // Reset helper
+  // Revert memory variables back to premium defaults
   const handleResetToDefaults = async () => {
-    if (window.confirm('Are you sure you want to reset all custom uploaded photos & videos back to premium defaults?')) {
-      await clearAllMedia();
-      const freshMedia = await populateDefaultsIfEmpty();
-      setMediaItems(freshMedia);
+    if (window.confirm('Are you sure you want to revert all text changes, custom music streams, and photos/videos back to premium defaults?')) {
+      const initialMedia: MemoryMedia[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const id = `photo${i}`;
+        const def = DEFAULT_PHOTOS[id] || { url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7', title: 'Special Memory', description: '' };
+        
+        let chapterId = 9;
+        if (i === 1) chapterId = 1;
+        else if (i === 2) chapterId = 2;
+        else if (i === 3 || i === 4) chapterId = 3;
+        else if (i === 5) chapterId = 4;
+        else if (i === 6) chapterId = 5;
+        else if (i === 7) chapterId = 6;
+        else if (i === 8) chapterId = 7;
+        else if (i === 9) chapterId = 8;
+
+        initialMedia.push({
+          id,
+          type: 'image',
+          url: def.url,
+          title: def.title,
+          description: def.description || `Special school snapshot ${i}`,
+          chapterId
+        });
+      }
+      for (let i = 1; i <= 2; i++) {
+        const id = `video${i}`;
+        const def = DEFAULT_VIDEOS[id] || { url: '', title: `Video ${i}` };
+        initialMedia.push({
+          id,
+          type: 'video',
+          url: def.url,
+          title: def.title,
+          description: `Persistent memory clip ${i} to highlight college & wonderful moments together.`,
+          chapterId: i === 1 ? 4 : 9
+        });
+      }
+
+      setMediaItems(initialMedia);
       setFriendshipDate('2022-06-17');
-      await saveMetadata('friendship_date', '2022-06-17');
-      alert('Reset completed successfully!');
+      setChapters(INITIAL_CHAPTERS);
+      setSongs(INITIAL_SONGS);
+
+      await syncDraftToFirebase(initialMedia, INITIAL_CHAPTERS, INITIAL_SONGS, '2022-06-17');
+      alert('All configurations reverted fully back to initial state defaults!');
     }
   };
 
@@ -217,11 +647,13 @@ export default function App() {
       mediaItems: mediaItems.map(m => ({
         id: m.id,
         type: m.type,
-        url: m.url, // Base64 encoding captured automatically
+        url: m.url, 
         title: m.title,
         description: m.description,
         chapterId: m.chapterId
-      }))
+      })),
+      chapters,
+      songs
     };
 
     const blob = new Blob([JSON.stringify(packageData, null, 2)], { type: 'application/json' });
@@ -241,21 +673,61 @@ export default function App() {
     reader.onload = async () => {
       try {
         const parsed = JSON.parse(reader.result as string);
-        if (parsed.friendshipDate) {
-          await handleUpdateFriendshipDate(parsed.friendshipDate);
-        }
-        if (Array.isArray(parsed.mediaItems)) {
-          for (const item of parsed.mediaItems) {
-            await handleUpdateMediaItem(item);
-          }
-        }
-        alert('Friendship Album successfully loaded from file!');
-        window.location.reload();
+        const loadedDate = parsed.friendshipDate || '2022-06-17';
+        const loadedMedia = Array.isArray(parsed.mediaItems) ? parsed.mediaItems : mediaItems;
+        const loadedChapters = Array.isArray(parsed.chapters) ? parsed.chapters : chapters;
+        const loadedSongs = Array.isArray(parsed.songs) ? parsed.songs : songs;
+
+        setFriendshipDate(loadedDate);
+        setMediaItems(loadedMedia);
+        setChapters(loadedChapters);
+        setSongs(loadedSongs);
+
+        await syncDraftToFirebase(loadedMedia, loadedChapters, loadedSongs, loadedDate);
+        alert('Friendship Album successfully loaded and staged to draft queue!');
       } catch (err) {
         alert('Invalid file format. Please upload a valid JSON album exported from this surprise tool!');
       }
     };
     reader.readAsText(file);
+  };
+
+  // Publish draft state changes to the live viewing audience
+  const handlePublishChanges = async () => {
+    try {
+      const liveState = {
+        mediaItems,
+        chapters,
+        songs,
+        friendshipDate
+      };
+      await publishState(liveState);
+      alert('Congratulations, Satyam! Your beautiful memory scrapbook additions are now live for Sonakshi and everyone to see!');
+    } catch (err: any) {
+      alert('Failed to publish changes: ' + err.message);
+    }
+  };
+
+  // Revert the staged draft state back to the last published live version
+  const handleUndoChanges = async () => {
+    if (window.confirm('Revert all unpublished edits? This will restore the current live version.')) {
+      try {
+        const liveState = await fetchPublishedState();
+        if (liveState) {
+          setMediaItems(liveState.mediaItems || []);
+          setChapters(liveState.chapters || []);
+          setSongs(liveState.songs || []);
+          setFriendshipDate(liveState.friendshipDate || '2022-06-17');
+          // Re-sync draft so it matches published
+          await saveDraftState(liveState);
+          alert('Successfully reverted all staged changes to alignment with published state.');
+        } else {
+          alert('No live published state found to revert to.');
+        }
+      } catch (err: any) {
+        alert('Reversion error: ' + err.message);
+      }
+    }
   };
 
   if (isLoading) {
@@ -288,32 +760,47 @@ export default function App() {
       <CursorTrail />
 
       {/* Floating audio chimes bar */}
-      <MusicPlayer currentTheme={currentTheme} />
+      <MusicPlayer currentTheme={currentTheme} songs={songs} />
+
+      {/* Admin Preview Mode badge */}
+      {isAdminLoggedIn && (
+        <div className="fixed top-6 left-6 z-[140] flex items-center gap-2 bg-amber-500 text-neutral-950 text-[10px] tracking-wider font-extrabold font-mono px-3 py-1.5 rounded-full shadow-lg border border-amber-400 select-none animate-pulse">
+          <span className="w-2 h-2 rounded-full bg-neutral-950" />
+          <span>STAGED ADMIN PREVIEW MODE</span>
+        </div>
+      )}
 
       {/* Persistent Settings, Exporter hub */}
       <CurationPanel 
         mediaItems={mediaItems}
         onUpdateMediaItem={handleUpdateMediaItem}
+        onAddMediaItem={handleAddMediaItem}
+        onDeleteMediaItem={handleDeleteMediaItem}
         friendshipDate={friendshipDate}
         onUpdateFriendshipDate={handleUpdateFriendshipDate}
         onResetToDefaults={handleResetToDefaults}
         onExportAlbum={handleExportAlbum}
         onImportAlbum={handleImportAlbum}
         currentTheme={currentTheme}
+        isAdminLoggedIn={isAdminLoggedIn}
+        onLogoutAdmin={handleLogoutAdmin}
+        songs={songs}
+        onUpdateSongs={handleUpdateSongs}
+        chapters={chapters}
+        onUpdateChapter={handleUpdateChapter}
+        onPrintBook={handlePrintAllCards}
+        onPublishChanges={handlePublishChanges}
+        onUndoChanges={handleUndoChanges}
       />
 
-      {/* Theme Toggle float button */}
-      <button
-        type="button"
-        onClick={toggleTheme}
-        className={`fixed top-6 right-54 z-[150] p-3 rounded-full shadow-lg border backdrop-blur-md hover:scale-110 active:scale-95 transition-all
-          ${currentTheme === 'dark' 
-            ? 'bg-neutral-900/80 border-rose-500/30 text-yellow-400 hover:bg-neutral-800' 
-            : 'bg-white/80 border-rose-200/50 text-slate-800 hover:bg-rose-50'}`}
-        title="Toggle background theme setting"
-      >
-        {currentTheme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-      </button>
+      {/* Creator Authenticate dialog */}
+      <AdminLoginModal
+        isOpen={showAdminLoginModal}
+        onClose={() => setShowAdminLoginModal(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+
+
 
       {/* Visual Rising Balloons rendering on trigger */}
       <div className="fixed inset-0 pointer-events-none z-[160] overflow-hidden">
@@ -350,9 +837,17 @@ export default function App() {
         ))}
       </div>
 
-      {!isJourneyStarted ? (
-        /* LANDING PAGE GREETINGS HERO SECTION */
-        <main className="max-w-4xl mx-auto px-6 py-20 min-h-[92vh] flex flex-col justify-center items-center text-center space-y-12 relative z-20">
+      <AnimatePresence mode="wait">
+        {!isJourneyStarted ? (
+          /* LANDING PAGE GREETINGS HERO SECTION */
+          <motion.main
+            key="landing"
+            initial={{ opacity: 0, scale: 0.98, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: -15 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="max-w-4xl mx-auto px-6 py-20 min-h-[92vh] flex flex-col justify-center items-center text-center space-y-12 relative z-20"
+          >
           
           <div className="space-y-4 animate-bounce-slow">
             {/* Glowing Rose Mini-badge */}
@@ -460,17 +955,35 @@ export default function App() {
               Start Friendship Journey <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
             </span>
           </button>
-        </main>
-      ) : (
-        /* SURPRISE CORE BODY ROUTING */
-        <main className="max-w-6xl mx-auto px-4 md:px-6 pt-12 relative z-25">
+          </motion.main>
+        ) : (
+          /* SURPRISE CORE BODY ROUTING */
+          <motion.main
+            key="scrapbook-body"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="max-w-6xl mx-auto px-4 md:px-6 pt-12 relative z-25"
+          >
           {/* Header Dashboard panel */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight font-serif text-slate-900 dark:text-rose-50">
-                Sonakshi’s Friendship Surprises
-              </h2>
-              <p className="text-xs opacity-75 font-medium">Curated with memories, love, and gratitude</p>
+            <div className="flex flex-wrap items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight font-serif text-slate-900 dark:text-rose-50">
+                  Sonakshi’s Friendship Surprises
+                </h2>
+                <p className="text-xs opacity-75 font-medium">Curated with memories, love, and gratitude</p>
+              </div>
+              {!isAdminLoggedIn && (
+                <button
+                  type="button"
+                  onClick={() => setShowAdminLoginModal(true)}
+                  className="px-3 py-1.5 rounded-full border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-850/80 text-[10px] uppercase font-mono tracking-widest text-rose-300 font-bold transition duration-200 flex items-center gap-1.5 active:scale-95 shadow-sm cursor-pointer z-50 hover:border-rose-500/30"
+                  title="Unlock photo adding option (Authorized access only)"
+                >
+                  <Lock className="w-3 h-3 text-rose-400" /> Creator Mode
+                </button>
+              )}
             </div>
 
             {/* Mode selection toggle bars */}
@@ -492,23 +1005,43 @@ export default function App() {
             </div>
           </div>
 
-          {/* Primary View mount */}
-          {viewMode === 'story' ? (
-            <ChapterView 
-              currentChapterIdx={currentChapterIdx}
-              onSetChapterIdx={setCurrentChapterIdx}
-              mediaItems={mediaItems}
-              onTriggerFireworks={() => setShowFireworks(true)}
-              onTriggerConfetti={() => setShowConfetti(true)}
-              currentTheme={currentTheme}
-            />
-          ) : (
-            <GalleryView 
-              mediaItems={mediaItems}
-              onTriggerConfetti={() => setShowConfetti(true)}
-              currentTheme={currentTheme}
-            />
-          )}
+          {/* Primary View mount with smooth transition */}
+          <AnimatePresence mode="wait">
+            {viewMode === 'story' ? (
+              <motion.div
+                key="story"
+                initial={{ opacity: 0, scale: 0.99, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.99, y: -10 }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+              >
+                <ChapterView 
+                  currentChapterIdx={currentChapterIdx}
+                  onSetChapterIdx={setCurrentChapterIdx}
+                  mediaItems={mediaItems}
+                  onTriggerFireworks={() => setShowFireworks(true)}
+                  onTriggerConfetti={() => setShowConfetti(true)}
+                  currentTheme={currentTheme}
+                  chapters={chapters}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="gallery"
+                initial={{ opacity: 0, scale: 0.99, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.99, y: -10 }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+              >
+                <GalleryView 
+                  mediaItems={mediaItems}
+                  onTriggerConfetti={() => setShowConfetti(true)}
+                  currentTheme={currentTheme}
+                  onPrintCard={handlePrintCard}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Friendship Live anniversary counter on sub-deck */}
           <div className="max-w-xl mx-auto mt-16 p-6 rounded-3xl bg-rose-500/5 border border-rose-300/10 text-center space-y-4">
@@ -546,7 +1079,19 @@ export default function App() {
             </p>
 
             {/* Glowing sentiment box */}
-            <div className="max-w-md mx-auto p-8 rounded-3xl bg-neutral-900/10 dark:bg-rose-500/10 border border-rose-300/20 backdrop-blur-md shadow-2xl relative">
+            <div 
+              onClick={() => {
+                const nextCount = lockClickCount + 1;
+                if (nextCount >= 5) {
+                  setShowAdminLoginModal(true);
+                  setLockClickCount(0);
+                } else {
+                  setLockClickCount(nextCount);
+                }
+              }}
+              title="A message from Satyam"
+              className="max-w-md mx-auto p-8 rounded-3xl bg-neutral-900/10 dark:bg-rose-500/10 border border-rose-300/20 backdrop-blur-md shadow-2xl relative cursor-pointer select-none"
+            >
               <div className="absolute top-2 right-2 text-rose-300 animate-pulse text-2xl">✨</div>
               <p className="text-sm md:text-sm font-semibold tracking-wide text-neutral-800 dark:text-rose-50 italic">
                 “I may not always be the perfect friend, but I will always be a genuine one. 💙”
@@ -575,8 +1120,80 @@ export default function App() {
               </button>
             </div>
           </section>
-        </main>
-      )}
+          </motion.main>
+        )}
+      </AnimatePresence>
+
+      {/* Elegant, A4-Sized physical print scrapbook compilation (Hidden on screen view, activated on print mode) */}
+      <div id="printable-a4-album" className="hidden print:block" style={{ contentVisibility: 'auto' }}>
+        {(() => {
+          const itemsToPrint = printAll 
+            ? mediaItems.filter(m => m.type === 'image') 
+            : (printTarget ? [printTarget] : []);
+
+          if (itemsToPrint.length === 0) return null;
+
+          return itemsToPrint.map((item) => {
+            const chapter = chapters.find(c => c.id === item.chapterId);
+            return (
+              <div key={item.id} className="print-card-page bg-white text-neutral-900 flex flex-col justify-between" style={{ contentVisibility: 'auto' }}>
+                {/* Vintage Journal Header */}
+                <div className="w-full flex justify-between items-center border-b-2 border-neutral-850 pb-3">
+                  <span className="text-[10px] font-mono tracking-widest uppercase text-neutral-500 font-bold">
+                    Chapter {item.chapterId} • Memory Archive
+                  </span>
+                  <span className="text-[10px] font-mono tracking-widest uppercase text-neutral-500 font-bold">
+                    Surprise Scrapbook Page
+                  </span>
+                </div>
+
+                {/* Polaroid Frame */}
+                <div className="flex-1 flex flex-col items-center justify-center my-6">
+                  <div className="p-6 bg-white border-2 border-neutral-100 shadow-xl rounded flex flex-col items-center w-[120mm] max-w-full">
+                    {/* Centered Graphic Photo */}
+                    <div className="w-full aspect-square overflow-hidden bg-neutral-100 border border-neutral-200">
+                      <img
+                        src={item.url}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    {/* Script style title label */}
+                    <div className="pt-6 pb-2 text-center w-full">
+                      <h3 className="font-serif italic text-3xl font-medium tracking-wide text-neutral-850 truncate">
+                        {item.title}
+                      </h3>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 block mt-1">
+                        Captured Reflection
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hand-written styled Backstory / Narrative */}
+                <div className="w-full max-w-xl mx-auto text-center space-y-3 mb-6 px-4">
+                  <div className="text-rose-500 text-3xl font-serif leading-none">“</div>
+                  <p className="text-sm font-serif leading-relaxed text-neutral-800 whitespace-pre-line italic text-center">
+                    {item.description || (chapter ? chapter.text : "A beautiful moment frozen in time, keeping the warmth of our journey alive forever.")}
+                  </p>
+                  <div className="text-rose-500 text-3xl font-serif leading-none">”</div>
+                </div>
+
+                {/* Footer and ownership markers */}
+                <div className="w-full flex justify-between items-center border-t border-dashed border-neutral-350 pt-4 mt-auto">
+                  <span className="text-[10px] font-mono text-neutral-400">
+                    Presented with love & laughter — Satyam
+                  </span>
+                  <span className="text-[10px] font-mono text-neutral-450 font-bold">
+                    For Sonakshi • Lifetime Keepsake
+                  </span>
+                </div>
+              </div>
+            );
+          });
+        })()}
+      </div>
     </div>
   );
 }

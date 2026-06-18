@@ -1,0 +1,34 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared global security helper predicates
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerSatyam() {
+      return isSignedIn() && request.auth.token.email.toLowerCase() == 'satyam000108@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Permit read access to Sonakshi and viewers, write restricted to Satyam
+    match /scrapbook/{document} {
+      allow read: if true;
+      allow write: if isOwnerSatyam() && isValidId(document);
+    }
+    
+    // Config/roles collection
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isOwnerSatyam() && isValidId(userId);
+    }
+  }
+}

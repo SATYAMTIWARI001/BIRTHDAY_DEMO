@@ -10,47 +10,57 @@ const DB_VERSION = 1;
 const STORE_MEDIA = 'memory_media';
 const STORE_METADATA = 'app_metadata';
 
-// Premium Unsplash placeholders that fit the vibe and coloring of the theme perfectly
-export const DEFAULT_PHOTOS: Record<string, { url: string; title: string }> = {
+// Premium local snapshots with nostalgic high-school memories and beautiful captions
+export const DEFAULT_PHOTOS: Record<string, { url: string; title: string; description: string }> = {
   photo1: {
-    url: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?q=80&w=1000',
-    title: 'The Spark of Friendship'
+    url: '/images/classroom_selfie.jpg',
+    title: 'Classroom Selfie Spark',
+    description: 'Benches full of laughter and a blackboard full of scribbled notes. Throwback to goofing around together, taking our very first group selfie during the morning recess.'
   },
   photo2: {
-    url: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=1000',
-    title: 'Walking Side by Side'
+    url: '/images/plaid_classmates.jpg',
+    title: 'Checkered Uniform Smiles',
+    description: 'Chilling in our red-and-black checkered plaid uniforms. No matter how tough the school tests got, these smiles and inside jokes always made everything easier.'
   },
   photo3: {
-    url: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?q=80&w=1000',
-    title: 'Warm Shared Epics'
+    url: '/images/friends_outdoors.jpg',
+    title: 'The Outing Core Crew',
+    description: 'Hanging out together under the warm sun, wearing our proud green and maroon shirts. This is the core squad that got through high school together, side-by-side.'
   },
   photo4: {
-    url: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000',
-    title: 'Sparks of Joy'
+    url: '/images/class_trip_datestamp.jpg',
+    title: 'Class Excursion',
+    description: 'That unforgettable walk along the path under the tall trees at 14:39 PM on February 13, 2025. A sweet retro digital camera timestamp of a great adventure.'
   },
   photo5: {
-    url: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=1000',
-    title: 'Campus Chronicles'
+    url: '/images/lake_selfie.jpg',
+    title: 'Floating Lake Excursion',
+    description: 'Our wild boat-house stop where we sat tightly together on those bright blue dock stairs, resting our feet near the cool, sparkling lake waters.'
   },
   photo6: {
-    url: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=1000',
-    title: 'Resilience and Growth'
+    url: '/images/river_bank_selfie.jpg',
+    title: 'Riverbank Golden Memories',
+    description: 'As the sun set gracefully on the sandy riverbank, we promised to stay linked forever despite life taking us down different pathways after school.'
   },
   photo7: {
-    url: 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?q=80&w=1000',
-    title: 'Heartfelt Reflections'
+    url: '/images/funny_classroom_pout.jpg',
+    title: 'Hilarious Classroom Candids',
+    description: 'A priceless capture of her legendary exaggerated drama face while trying to snack on her cookie inside the classroom. Real moments, zero filters!'
   },
   photo8: {
-    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1000',
-    title: 'Pure Gratitude'
+    url: '/images/classroom_selfie.jpg',
+    title: 'Studying & Smiling Together',
+    description: 'The late evenings spent writing project file notes together on those wooden class desks. The best exam preparation was always just talking and laughing.'
   },
   photo9: {
-    url: 'https://images.unsplash.com/photo-1530103862676-de8c9debad1d?q=80&w=1000',
-    title: 'The Birthday Wishes'
+    url: '/images/plaid_classmates.jpg',
+    title: 'Classroom Reunion Reflection',
+    description: 'Looking back, those classroom walls witnessed our greatest dreams, our silent fears, and our deepest school bonds.'
   },
   photo10: {
-    url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?q=80&w=1000',
-    title: 'Eternal Bond'
+    url: '/images/friends_outdoors.jpg',
+    title: 'An Eternal Bond of Friends',
+    description: 'From school bells to life milestones, in school uniforms or our best clothes – this group has a bond that time can never fade away.'
   }
 };
 
@@ -67,20 +77,27 @@ export const DEFAULT_VIDEOS: Record<string, { url: string; title: string }> = {
 
 function initDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_MEDIA)) {
-        db.createObjectStore(STORE_MEDIA, { keyPath: 'id' });
+    try {
+      if (typeof indexedDB === 'undefined') {
+        throw new Error('IndexedDB is not supported in this user environment');
       }
-      if (!db.objectStoreNames.contains(STORE_METADATA)) {
-        db.createObjectStore(STORE_METADATA, { keyPath: 'key' });
-      }
-    };
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+      request.onupgradeneeded = (event) => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_MEDIA)) {
+          db.createObjectStore(STORE_MEDIA, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_METADATA)) {
+          db.createObjectStore(STORE_METADATA, { keyPath: 'key' });
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB request error'));
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -214,3 +231,16 @@ export async function clearAllMedia(): Promise<void> {
     request.onerror = () => reject(request.error);
   });
 }
+
+export async function deleteMediaItem(id: string): Promise<void> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const trx = db.transaction(STORE_MEDIA, 'readwrite');
+    const store = trx.objectStore(STORE_MEDIA);
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+

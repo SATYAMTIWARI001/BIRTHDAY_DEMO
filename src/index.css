@@ -132,3 +132,73 @@
   background: radial-gradient(circle, rgba(255,182,193,0.85) 0%, rgba(255,218,224,0.4) 100%);
   border-radius: 75% 25% 65% 35% / 75% 35% 65% 25%;
 }
+
+/* Elegant, High-Definition A4 Scrapbook Printing Rules */
+@media print {
+  /* Suppress and hide all default interactive screen panels, wrappers, triggers, and audio layers */
+  #root,
+  .no-print,
+  #curate-button,
+  .fixed,
+  .absolute,
+  iframe,
+  kbd,
+  button,
+  audio,
+  nav,
+  input,
+  select,
+  textarea {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+  }
+
+  /* Expose physical print container layout */
+  #printable-a4-album,
+  #printable-a4-album * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  html, 
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    font-family: "Playfair Display", Georgia, serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Render each memory page strictly bounded to an exact portrait A4 canvas (210mm x 297mm) */
+  .print-card-page {
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+    break-after: page !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    padding: 20mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  /* Force background dimensions & color rendering integrity */
+  img {
+    max-height: 100% !important;
+    max-width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

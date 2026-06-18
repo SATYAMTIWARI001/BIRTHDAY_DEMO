@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "MemoryMedia": {
+      "title": "MemoryMedia",
+      "description": "An image or video representing a curated snapshot of the friendship scrap book.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique key identifier"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["image", "video"],
+          "description": "Media stream category"
+        },
+        "url": {
+          "type": "string",
+          "description": "Data URI, cloud asset URL, or Unsplash source link"
+        },
+        "title": {
+          "type": "string",
+          "description": "Memory card subtitle caption heading"
+        },
+        "description": {
+          "type": "string",
+          "description": "A heartfelt story or summary attached to the memory"
+        },
+        "chapterId": {
+          "type": "integer",
+          "description": "Associated narrative index"
+        }
+      },
+      "required": ["id", "type", "url", "title", "description", "chapterId"]
+    },
+    "Song": {
+      "title": "Song",
+      "description": "A musical audio track custom curated for the surprise journey background atmosphere.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Sound ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Song label name"
+        },
+        "artist": {
+          "type": "string",
+          "description": "Artist or composer attribution text"
+        },
+        "url": {
+          "type": "string",
+          "description": "Live playable audio asset stream URL"
+        },
+        "isSynthesized": {
+          "type": "boolean",
+          "description": "True if compiled procedurally via native sound wave oscillators"
+        }
+      },
+      "required": ["id", "title", "artist", "url"]
+    },
+    "Chapter": {
+      "title": "Chapter",
+      "description": "A storyline block outlining major memory phases, notes of gratitude, and interactive visuals.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Story sequence tracker ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title header"
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Optional secondary tagline subtitle"
+        },
+        "text": {
+          "type": "string",
+          "description": "Markdown or raw narrative content expressing friendship memories"
+        },
+        "photoIds": {
+          "type": "array",
+          "description": "List of associated memory image IDs"
+        },
+        "videoIds": {
+          "type": "array",
+          "description": "List of associated memory video clip IDs"
+        },
+        "isGlassMessage": {
+          "type": "boolean",
+          "description": "Style toggle for frosted glowing background visual theme overrides"
+        },
+        "hasTrigger": {
+          "type": "string",
+          "enum": ["fireworks", "confetti", "balloons", "all"],
+          "description": "Trigger code for real-time physics celebration overlays"
+        }
+      },
+      "required": ["id", "title", "text", "photoIds"]
+    },
+    "AlbumState": {
+      "title": "AlbumState",
+      "description": "The unified state of the memory scrapbook containing all customized texts and media lists.",
+      "type": "object",
+      "properties": {
+        "mediaItems": {
+          "type": "array",
+          "description": "Full collection of image and video memory nodes"
+        },
+        "chapters": {
+          "type": "array",
+          "description": "Story chapters metadata and narrative overrides"
+        },
+        "songs": {
+          "type": "array",
+          "description": "Surprise music soundtrack playlists"
+        },
+        "friendshipDate": {
+          "type": "string",
+          "description": "Anniversary lock date calculation baseline"
+        }
+      },
+      "required": ["mediaItems", "chapters", "songs", "friendshipDate"]
+    }
+  },
+  "firestore": {
+    "/scrapbook/{docId}": {
+      "schema": "AlbumState",
+      "description": "Saves live published configurations and staging draft states of Satyam's custom gift."
+    }
+  }
+}

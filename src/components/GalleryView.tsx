@@ -4,16 +4,17 @@
  */
 
 import React, { useState } from 'react';
-import { Heart, ZoomIn, X, ChevronLeft, ChevronRight, MessageCircle, Star } from 'lucide-react';
+import { Heart, ZoomIn, X, ChevronLeft, ChevronRight, MessageCircle, Star, Printer } from 'lucide-react';
 import { MemoryMedia } from '../types';
 
 interface GalleryViewProps {
   mediaItems: MemoryMedia[];
   onTriggerConfetti: () => void;
   currentTheme: 'light' | 'dark';
+  onPrintCard: (item: MemoryMedia) => void;
 }
 
-export function GalleryView({ mediaItems, onTriggerConfetti, currentTheme }: GalleryViewProps) {
+export function GalleryView({ mediaItems, onTriggerConfetti, currentTheme, onPrintCard }: GalleryViewProps) {
   const [selectedPhotoIdx, setSelectedPhotoIdx] = useState<number | null>(null);
   const [reactions, setReactions] = useState<Record<string, number>>({});
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
@@ -171,33 +172,45 @@ export function GalleryView({ mediaItems, onTriggerConfetti, currentTheme }: Gal
                 </p>
               </div>
 
-              {/* Heart reaction trigger */}
-              <div className="mt-8 border-t border-rose-100/20 pt-4 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={(e) => handleAddReaction(currentSelectedPhoto.id, e)}
-                  className="relative group px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full text-xs font-bold tracking-widest uppercase flex items-center gap-2 transition overflow-hidden scale-100 hover:scale-102 active:scale-95"
-                >
-                  <Heart className="w-4 h-4 fill-rose-500 animate-pulse text-rose-500" />
-                  <span>Send Love</span>
-                  <span className="font-mono bg-rose-550/15 py-0.5 px-2 rounded-full ml-1">
-                    {reactions[currentSelectedPhoto.id] || 0}
-                  </span>
-
-                  {/* Render flying micro-hearts on click */}
-                  {floatingHearts.map((h) => (
-                    <span
-                      key={h.id}
-                      className="absolute text-rose-550 font-bold pointer-events-none animate-float-heart"
-                      style={{
-                        left: `${h.x - 30}px`,
-                        top: `${h.y - 40}px`
-                      }}
-                    >
-                      💖
+              {/* Heart reaction and Print trigger */}
+              <div className="mt-8 border-t border-rose-100/20 pt-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => handleAddReaction(currentSelectedPhoto.id, e)}
+                    className="relative group px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-1.5 transition overflow-hidden scale-100 hover:scale-102 active:scale-95"
+                  >
+                    <Heart className="w-3.5 h-3.5 fill-rose-500 animate-pulse text-rose-500" />
+                    <span>Send Love</span>
+                    <span className="font-mono bg-rose-550/15 py-0.5 px-1.5 rounded-full text-[10px]">
+                      {reactions[currentSelectedPhoto.id] || 0}
                     </span>
-                  ))}
-                </button>
+
+                    {/* Render flying micro-hearts on click */}
+                    {floatingHearts.map((h) => (
+                      <span
+                        key={h.id}
+                        className="absolute text-rose-550 font-bold pointer-events-none animate-float-heart"
+                        style={{
+                          left: `${h.x - 30}px`,
+                          top: `${h.y - 40}px`
+                        }}
+                      >
+                        💖
+                      </span>
+                    ))}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onPrintCard(currentSelectedPhoto)}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-650 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-1.5 transition scale-100 hover:scale-102 active:scale-95"
+                    title="Print this memory card into an elegant physical A4 layout"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Print to PDF</span>
+                  </button>
+                </div>
 
                 <div className="flex gap-2 text-[10px] tracking-widest uppercase text-neutral-400 font-mono items-center select-none">
                   <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-400 animate-spin" style={{ animationDuration: '6s' }} />

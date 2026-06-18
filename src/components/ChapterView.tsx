@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { Heart, Sparkles, ChevronLeft, ChevronRight, Play, Pause, AlertCircle, Quote } from 'lucide-react';
 import { MemoryMedia, Chapter } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ChapterViewProps {
   currentChapterIdx: number;
@@ -14,6 +15,7 @@ interface ChapterViewProps {
   onTriggerFireworks: () => void;
   onTriggerConfetti: () => void;
   currentTheme: 'light' | 'dark';
+  chapters: Chapter[];
 }
 
 // Typing effect helper for Chapter 6
@@ -37,7 +39,7 @@ function TypedMessage({ text }: { text: string }) {
   }, [text]);
 
   return (
-    <div className="whitespace-pre-line text-neutral-800 dark:text-rose-50 text-xs md:text-sm leading-relaxed font-medium tracking-wide">
+    <div className="whitespace-pre-line text-neutral-800 dark:text-rose-50 text-xs md:text-sm leading-relaxed font-medium tracking-wide font-sans">
       {displayed}
       <span className="inline-block w-1.5 h-4 bg-rose-500 animate-pulse ml-0.5" />
     </div>
@@ -50,106 +52,10 @@ export function ChapterView({
   mediaItems,
   onTriggerFireworks,
   onTriggerConfetti,
-  currentTheme
+  currentTheme,
+  chapters
 }: ChapterViewProps) {
   const [autoPlay, setAutoPlay] = useState(false);
-
-  const chapters: Chapter[] = [
-    {
-      id: 1,
-      title: 'Where It All Started',
-      subtitle: 'Chapter I — The Beginning',
-      text: 'Life introduces us to countless people, but only a few leave a lasting impact. Looking back, I never imagined that a simple friendship would create so many wonderful memories.',
-      photoIds: ['photo1']
-    },
-    {
-      id: 2,
-      title: 'Knowing You Better',
-      subtitle: 'Chapter II — Getting To Know You',
-      text: 'Every conversation, every laugh, and every little moment helped me understand what a wonderful person you are. Your kindness, positivity, and personality make every memory brighter.',
-      photoIds: ['photo2']
-    },
-    {
-      id: 3,
-      title: 'Moments Worth Remembering',
-      subtitle: 'Chapter III — Memories We Created',
-      text: 'Photos freeze moments, but memories keep them alive forever. Every picture here carries a story, a laugh, or a memory that made this journey special.',
-      photoIds: ['photo3', 'photo4']
-    },
-    {
-      id: 4,
-      title: 'Our College Journey',
-      subtitle: 'Chapter IV — College Days',
-      text: 'Assignments, classes, random conversations, fun moments, stressful deadlines, and unforgettable laughs. College became a lot more memorable because of the people we met along the way.',
-      photoIds: ['photo5'],
-      videoIds: ['video1']
-    },
-    {
-      id: 5,
-      title: 'Growing Through Challenges',
-      subtitle: 'Chapter V — Growth & Challenges',
-      text: 'Life isn’t always easy. We all face challenges, make mistakes, learn lessons, and keep moving forward. Watching your determination and growth has always been inspiring.',
-      photoIds: ['photo6']
-    },
-    {
-      id: 6,
-      title: 'Something From My Heart',
-      subtitle: 'Chapter VI — Something I Want You to Know',
-      text: `I know I can be direct sometimes.
-I know I can be stubborn.
-I know I can occasionally say things in a way that sounds rude or harsh.
-And if I have ever hurt you, upset you, or made you feel bad because of something I said, I genuinely want to say sorry.
-
-The truth is, my intentions were never to hurt you.
-Sometimes I speak honestly without realizing how my words might sound. Sometimes I try to help but end up sounding too blunt.
-But behind every joke, every disagreement, every piece of advice, and every conversation, there has always been respect and genuine care for you as a friend.
-
-You are someone I truly value.
-If you ever saw me as someone who could hurt you, I hope you can also see that I never wanted to.
-I may not always be the perfect friend.
-I may make mistakes.
-But I have always tried to be a real friend.
-Thank you for understanding me, for tolerating my flaws, and for being part of this journey.
-And if there is anything worth keeping from all these memories, I hope it’s our friendship.`,
-      photoIds: ['photo7'],
-      isGlassMessage: true
-    },
-    {
-      id: 7,
-      title: 'Thank You',
-      subtitle: 'Chapter VII — Gratitude',
-      text: 'Thank you for every memory, every laugh, every random conversation, and every moment that became part of this journey. The little things often become the memories we cherish most.',
-      photoIds: ['photo8']
-    },
-    {
-      id: 8,
-      title: 'Happy Birthday Sonakshi',
-      subtitle: 'Chapter VIII — Birthday Wishes',
-      text: `Today is your day.
-I wish you endless happiness.
-I wish you success in everything you do.
-I wish you good health, beautiful memories, amazing opportunities, and countless reasons to smile.
-
-May every dream you have slowly become reality.
-May this year bring new adventures, new achievements, and moments that make you genuinely happy.
-You deserve all the happiness in the world.`,
-      photoIds: ['photo9'],
-      hasTrigger: 'all'
-    },
-    {
-      id: 9,
-      title: 'The Journey Continues',
-      subtitle: 'Chapter IX — The Future',
-      text: `We may take different paths in life.
-We may become busy.
-We may not talk every day.
-But some friendships remain special no matter how much time passes.
-Years from now, I hope we look back at these memories and smile.
-And I hope our friendship continues to grow with time.`,
-      photoIds: ['photo10'],
-      videoIds: ['video2']
-    }
-  ];
 
   const currentChapter = chapters[currentChapterIdx];
 
@@ -262,37 +168,46 @@ And I hope our friendship continues to grow with time.`,
         <div className="absolute right-6 top-6 text-rose-300/30 text-5xl pointer-events-none select-none animate-pulse">🌸</div>
         <div className="absolute left-6 bottom-6 text-pink-300/30 text-6xl pointer-events-none select-none animate-bounce">🦋</div>
 
-        {/* Story content layout splits beautifully on desk, column on mobile */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start my-auto">
-          {/* Text Section */}
-          <div className="md:col-span-7 space-y-4">
-            <span className="text-[10px] tracking-widest font-mono uppercase text-rose-550 block font-bold">
-              {currentChapter?.subtitle}
-            </span>
-            
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight font-serif text-slate-900 dark:text-rose-50">
-              {currentChapter?.title}
-            </h2>
+        {/* Story content layout splits beautifully on desk, column on mobile with smooth transition */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentChapterIdx}
+            initial={{ opacity: 0, scale: 0.98, x: 15 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.98, x: -15 }}
+            transition={{ duration: 0.4, ease: "easeInOut" }}
+            className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start my-auto"
+          >
+            {/* Text Section */}
+            <div className="md:col-span-7 space-y-4">
+              <span className="text-[10px] tracking-widest font-mono uppercase text-rose-550 block font-bold">
+                {currentChapter?.subtitle}
+              </span>
+              
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight font-serif text-slate-900 dark:text-rose-50">
+                {currentChapter?.title}
+              </h2>
 
-            {currentChapter?.isGlassMessage ? (
-              // Glass apology beautiful cards
-              <div className="relative p-5 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border border-rose-200/30 dark:border-rose-500/20 shadow-md backdrop-blur-lg overflow-hidden my-4">
-                <Quote className="absolute -top-1 -left-1 w-10 h-10 text-rose-300/20" />
-                <TypedMessage text={currentChapter.text} />
-              </div>
-            ) : (
-              <p className="text-sm md:text-sm leading-relaxed opacity-90 font-medium whitespace-pre-line text-neutral-600 dark:text-neutral-300">
-                {currentChapter?.text}
-              </p>
-            )}
-          </div>
+              {currentChapter?.isGlassMessage ? (
+                // Glass apology beautiful cards
+                <div className="relative p-5 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border border-rose-200/30 dark:border-rose-500/20 shadow-md backdrop-blur-lg overflow-hidden my-4">
+                  <Quote className="absolute -top-1 -left-1 w-10 h-10 text-rose-300/20" />
+                  <TypedMessage text={currentChapter.text} />
+                </div>
+              ) : (
+                <p className="text-sm md:text-sm leading-relaxed opacity-90 font-medium whitespace-pre-line text-neutral-600 dark:text-neutral-300">
+                  {currentChapter?.text}
+                </p>
+              )}
+            </div>
 
-          {/* Media visual column */}
-          <div className="md:col-span-5 space-y-4 flex flex-col items-center justify-center">
-            {currentChapter?.photoIds.map((pid) => renderMediaForChapter(pid, 'image'))}
-            {currentChapter?.videoIds?.map((vid) => renderMediaForChapter(vid, 'video'))}
-          </div>
-        </div>
+            {/* Media visual column */}
+            <div className="md:col-span-5 space-y-4 flex flex-col items-center justify-center">
+              {currentChapter?.photoIds.map((pid) => renderMediaForChapter(pid, 'image'))}
+              {currentChapter?.videoIds?.map((vid) => renderMediaForChapter(vid, 'video'))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
 
         {/* Foot navigation */}
         <div className="mt-8 pt-6 flex items-center justify-between border-t border-rose-100/10">

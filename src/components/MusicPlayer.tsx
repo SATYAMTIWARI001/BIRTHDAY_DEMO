@@ -9,33 +9,10 @@ import { Song } from '../types';
 
 interface MusicPlayerProps {
   currentTheme: 'light' | 'dark';
+  songs: Song[];
 }
 
-const SONGS: Song[] = [
-  {
-    id: 'synth-bday',
-    title: 'Nostalgic Music Box (Happy Birthday)',
-    artist: 'Procedural Synth Engine',
-    url: '', // trigger Web Audio
-    isSynthesized: true,
-  },
-  {
-    id: 'piano-ambient',
-    title: 'Soft Piano Instrumental',
-    artist: 'Ethereal Melodies',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', // reliable sample track
-    isSynthesized: false,
-  },
-  {
-    id: 'acoustic-journey',
-    title: 'Acoustic Guitar Whispers',
-    artist: 'Warm Strings Ambient',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', // reliable sample track
-    isSynthesized: false,
-  }
-];
-
-export function MusicPlayer({ currentTheme }: MusicPlayerProps) {
+export function MusicPlayer({ currentTheme, songs }: MusicPlayerProps) {
   const [songIdx, setSongIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(0.5);
@@ -46,7 +23,13 @@ export function MusicPlayer({ currentTheme }: MusicPlayerProps) {
   const synthIntervalRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  const currentSong = SONGS[songIdx];
+  const currentSong = songs[songIdx] || songs[0] || {
+    id: 'synth-bday',
+    title: 'Nostalgic Music Box (Happy Birthday)',
+    artist: 'Procedural Synth Engine',
+    url: '',
+    isSynthesized: true
+  };
 
   // Procedural Web Audio API synthesizer for the "Happy Birthday" melody!
   const playBirthdaySynthNote = (frequency: number, duration: number, startTime: number) => {
@@ -203,11 +186,11 @@ export function MusicPlayer({ currentTheme }: MusicPlayerProps) {
   };
 
   const handleNext = () => {
-    setSongIdx((prev) => (prev + 1) % SONGS.length);
+    setSongIdx((prev) => (prev + 1) % (songs.length || 1));
   };
 
   const handlePrev = () => {
-    setSongIdx((prev) => (prev - 1 + SONGS.length) % SONGS.length);
+    setSongIdx((prev) => (prev - 1 + (songs.length || 1)) % (songs.length || 1));
   };
 
   return (
